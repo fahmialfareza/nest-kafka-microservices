@@ -1,7 +1,7 @@
 version: '3.9'
 
 services:
-  backend:
+  email_backend:
     build: .
     command: yarn start:dev
     volumes:

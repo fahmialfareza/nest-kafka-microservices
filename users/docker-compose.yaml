@@ -1,0 +1,31 @@
+version: '3.9'
+
+services:
+  users_backend:
+    build: .
+    container_name: users-ms
+    command: yarn start:dev
+    ports:
+      - 8001:3000
+    volumes:
+      - .:/app
+    depends_on:
+      - users_db
+    networks:
+      - users
+
+  users_db:
+    image: mysql:8
+    ports:
+      - 33060:3306
+    environment:
+      MYSQL_DATABASE: users
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - .dbdata:/var/lib/mysql
+    networks:
+      - users
+
+networks:
+  users:
+    name: users
