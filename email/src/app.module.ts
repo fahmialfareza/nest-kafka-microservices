@@ -6,7 +6,7 @@ import { MailerModule } from '@nestjs-modules/mailer';
   imports: [
     MailerModule.forRoot({
       transport: {
-        host: 'host.docker.internal',
+        host: 'localhost',
         port: 1025,
       },
       defaults: {

@@ -7,21 +7,28 @@ import { KafkaMessage } from 'kafkajs';
 export class AppController {
   constructor(private mailerService: MailerService) {}
 
-  @MessagePattern('default')
-  async orderComplete(@Payload() message: KafkaMessage) {
-    console.log(message);
-    const order: any = message.value;
+  @MessagePattern('email_topic')
+  async event(@Payload() message: KafkaMessage) {
+    try {
+      this[message.key.toString()](message.value);
+    } catch (error) {
+      console.log(error.message);
+    }
+  }
 
+  async sendRegisterEmail(data: any) {
     await this.mailerService.sendMail({
-      to: 'admin@admin.com',
-      subject: 'An order has been completed',
-      html: `Order #${order.id} with a total of $${order.total} has been completed!`,
+      to: data.email,
+      subject: 'Terima kasih telah mendaftar',
+      html: `Anda telah terdaftar menjadi member di Aplikasi Nest Kafka Microservices.`,
     });
+  }
 
+  async sendLoginEmail(data: any) {
     await this.mailerService.sendMail({
-      to: order.ambassador_email,
-      subject: 'An order has been completed',
-      html: `You earned $${order.ambassador_revenue} from the link #${order.code}`,
+      to: data.email,
+      subject: 'Seseorang telah masuk',
+      html: `Seseorang telah masuk menggunakan akun anda.`,
     });
   }
 }
