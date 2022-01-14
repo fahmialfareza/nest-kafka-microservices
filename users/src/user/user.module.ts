@@ -7,6 +7,7 @@ import { User } from './user.entity';
 import { UserService } from './user.service';
 import { UserToken } from './userToken.entity';
 import { TokenService } from './token.service';
+import { KafkaModule } from 'src/kafka/kafka.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { TokenService } from './token.service';
       secret: 'secret',
       signOptions: { expiresIn: '1d' },
     }),
+    KafkaModule,
   ],
   controllers: [UserController, AuthController],
   providers: [UserService, TokenService],

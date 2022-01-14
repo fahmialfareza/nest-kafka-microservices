@@ -1,21 +1,27 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { MoreThanOrEqual } from 'typeorm';
 import { TokenService } from './token.service';
 
 @Injectable()
-export class AuthGuard implements CanActivate {
+export class RolesGuard implements CanActivate {
   constructor(
+    private reflector: Reflector,
     private jwtService: JwtService,
     private tokenService: TokenService,
   ) {}
 
-  async canActivate(context: ExecutionContext) {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const roles = this.reflector.getAllAndOverride('roles', [
+      context.getHandler(),
+    ]);
     const request = context.switchToHttp().getRequest();
 
     try {
       const jwt = request.headers.authorization.replace('Bearer ', '');
-      const { id } = await this.jwtService.verify(jwt);
+
+      const { id, scope } = await this.jwtService.verify(jwt);
 
       const userToken = await this.tokenService.findOne({
         user_id: id,
@@ -23,6 +29,10 @@ export class AuthGuard implements CanActivate {
       });
 
       if (!userToken) {
+        return false;
+      }
+
+      if (!roles.includes(scope)) {
         return false;
       }
 

@@ -1,17 +1,35 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import {
+  ClassSerializerInterceptor,
+  Controller,
+  Get,
+  Param,
+  SetMetadata,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { RolesGuard } from './roles.guard';
 import { UserService } from './user.service';
 
 @Controller('users')
+@UseInterceptors(ClassSerializerInterceptor)
 export class UserController {
   constructor(private userService: UserService) {}
 
   @Get()
+  @UseGuards(RolesGuard)
+  @SetMetadata('roles', ['admin'])
   async all() {
-    return this.userService.find();
+    const users = await this.userService.find();
+
+    return users;
   }
 
   @Get(':id')
+  @UseGuards(RolesGuard)
+  @SetMetadata('roles', ['admin'])
   async get(@Param('id') id: number) {
-    return this.userService.findOne(id);
+    const user = await this.userService.findOne(id);
+
+    return user;
   }
 }

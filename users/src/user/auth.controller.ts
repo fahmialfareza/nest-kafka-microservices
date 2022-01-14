@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   Body,
-  Param,
   ClassSerializerInterceptor,
   Controller,
   Get,
@@ -9,27 +8,26 @@ import {
   Post,
   Put,
   Req,
-  Res,
-  UnauthorizedException,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { MoreThanOrEqual } from 'typeorm';
 import { RegisterDto } from './dtos/register.dto';
 import { UserService } from '../user/user.service';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
-import { Response, Request } from 'express';
+import { Request } from 'express';
 import { TokenService } from './token.service';
 import { AuthGuard } from './auth.guard';
+import { KafkaService } from '../kafka/kafka.service';
 
-@Controller()
+@Controller('auth')
 @UseInterceptors(ClassSerializerInterceptor)
 export class AuthController {
   constructor(
     private userService: UserService,
     private tokenService: TokenService,
     private jwtService: JwtService,
+    private kafkaService: KafkaService,
   ) {}
 
   @Post('register')
@@ -42,19 +40,22 @@ export class AuthController {
 
     const hashed = await bcrypt.hash(body.password, 12);
 
-    return this.userService.save({
+    const newUser = await this.userService.save({
       ...data,
       password: hashed,
     });
+
+    await this.kafkaService.emit(['email_topic'], 'sendRegisterEmail', {
+      email: newUser.email,
+    });
+
+    return { data: newUser };
   }
 
   @Post('login')
   async login(
     @Body('email') email: string,
     @Body('password') password: string,
-    @Body('scope') scope: string,
-    @Res({ passthrough: true }) response: Response,
-    @Req() request: Request,
   ) {
     const user = await this.userService.findOne({ email });
 
@@ -66,9 +67,9 @@ export class AuthController {
       throw new BadRequestException('Invalid credentials');
     }
 
-    const jwt = await this.jwtService.signAsync({
+    const token = await this.jwtService.signAsync({
       id: user.id,
-      scope,
+      scope: user.is_ambassador ? 'ambassador' : 'admin',
     });
 
     const tomorrow = new Date();
@@ -76,75 +77,68 @@ export class AuthController {
 
     await this.tokenService.save({
       user_id: user.id,
-      token: jwt,
+      token,
       created_at: new Date(),
       expired_at: tomorrow,
     });
 
-    return { jwt };
+    await this.kafkaService.emit(['email_topic'], 'sendLoginEmail', {
+      email: user.email,
+    });
+
+    return { data: { token } };
   }
 
   @UseGuards(AuthGuard)
-  @Get('user/:scope')
-  async user(@Req() request: Request, @Param('scope') requestScope: string) {
-    const { id, scope } = await this.jwtService.verify(request.cookies['jwt']);
+  @Get('user')
+  async user(@Req() request: Request) {
+    const { id } = await this.jwtService.verify(
+      request.headers.authorization.replace('Bearer ', ''),
+    );
 
-    const userToken = await this.tokenService.findOne({
-      user_id: id,
-      expired_at: MoreThanOrEqual(new Date()),
-    });
+    const user = await this.userService.findOne({ id });
 
-    if (!userToken) {
-      throw new UnauthorizedException();
-    }
-
-    if (
-      (requestScope == 'admin' && scope === 'ambassador') ||
-      (requestScope == 'ambassador' && scope === 'admin')
-    ) {
-      throw new UnauthorizedException();
-    }
-
-    return this.userService.findOne({ id });
+    return { data: user };
   }
 
   @UseGuards(AuthGuard)
   @Post('logout')
   async logout(@Req() request: Request) {
-    const cookie = request.cookies['jwt'];
-
-    const { id } = await this.jwtService.verifyAsync(cookie);
+    const { id } = await this.jwtService.verify(
+      request.headers.authorization.replace('Bearer ', ''),
+    );
 
     await this.tokenService.delete({ user_id: id });
 
     return {
       message: 'success',
+      data: {},
     };
   }
 
   @UseGuards(AuthGuard)
-  @Put('users/info')
+  @Put('user/info')
   async updateInfo(
     @Req() request: Request,
     @Body('first_name') first_name: string,
     @Body('last_name') last_name: string,
-    @Body('email') email: string,
   ) {
-    const cookie = request.cookies['jwt'];
-
-    const { id } = await this.jwtService.verifyAsync(cookie);
+    const { id } = await this.jwtService.verify(
+      request.headers.authorization.replace('Bearer ', ''),
+    );
 
     await this.userService.update(id, {
       first_name,
       last_name,
-      email,
     });
 
-    return this.userService.findOne({ id });
+    const user = await this.userService.findOne({ id });
+
+    return { data: user };
   }
 
   @UseGuards(AuthGuard)
-  @Put('users/password')
+  @Put('user/password')
   async updatePassword(
     @Req() request: Request,
     @Body('password') password: string,
@@ -154,14 +148,16 @@ export class AuthController {
       throw new BadRequestException('Passwords do not match!');
     }
 
-    const cookie = request.cookies['jwt'];
-
-    const { id } = await this.jwtService.verifyAsync(cookie);
+    const { id } = await this.jwtService.verify(
+      request.headers.authorization.replace('Bearer ', ''),
+    );
 
     await this.userService.update(id, {
       password: await bcrypt.hash(password, 12),
     });
 
-    return this.userService.findOne({ id });
+    const user = await this.userService.findOne({ id });
+
+    return { data: user };
   }
 }
